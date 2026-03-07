@@ -45,19 +45,14 @@ function calcDoubleProgression(exName, weight, setResults, repsStr, lastEntry) {
   const filled = setResults.filter(s => s && s.status);
   if (!filled.length) return { nextWeight: weight, nextReps: lastEntry?.nextReps ?? min, bump: false, progressNote: null };
 
-  const failCount  = filled.filter(s => s.status === "fail").length;
-  const allSuccess = filled.every(s => s.status === "success") && filled.length === setResults.length;
-  const allMaxReps = allSuccess && filled.every(s => (s.reps ?? max) >= max);
+  const totalSets   = setResults.length;
+  const failCount   = filled.filter(s => s.status === "fail").length;
+  const allSuccess  = filled.every(s => s.status === "success") && filled.length === totalSets;
+  const allMaxReps  = allSuccess && (lastEntry?.nextReps ?? min) >= max;
 
   let nextWeight = weight, nextReps = lastEntry?.nextReps ?? min, bump = false, progressNote = null;
 
-  if (failCount >= 2) {
-    nextReps = Math.max(min, (lastEntry?.nextReps ?? min) - 1);
-    progressNote = "실패 — 폼 체크 후 다음 도전 🙏";
-  } else if (failCount === 1) {
-    nextReps = lastEntry?.nextReps ?? min;
-    progressNote = "간신히 — 같은 무게/횟수 유지";
-  } else if (allMaxReps) {
+  if (allMaxReps) {
     nextWeight = +(weight + step).toFixed(1);
     nextReps   = min;
     bump       = true;
@@ -65,9 +60,15 @@ function calcDoubleProgression(exName, weight, setResults, repsStr, lastEntry) {
   } else if (allSuccess) {
     nextReps = Math.min(max, (lastEntry?.nextReps ?? min) + 1);
     progressNote = `✅ 성공! 다음 ${nextReps}회 도전`;
+  } else if (failCount >= totalSets) {
+    nextReps = Math.max(min, (lastEntry?.nextReps ?? min) - 2);
+    progressNote = `전 세트 실패 — 목표 횟수 -2 (${nextReps}회)`;
+  } else if (failCount >= 2) {
+    nextReps = Math.max(min, (lastEntry?.nextReps ?? min) - 1);
+    progressNote = `실패 ${failCount}세트 — 목표 횟수 -1 (${nextReps}회)`;
   } else {
     nextReps = lastEntry?.nextReps ?? min;
-    progressNote = "무게 유지, 횟수 유지";
+    progressNote = `실패 1세트 — 횟수/무게 유지 (${nextReps}회)`;
   }
   return { nextWeight, nextReps, bump, progressNote };
 }
@@ -83,10 +84,10 @@ const ROUTINE = {
     { name:"바벨 벤치프레스",      defaultWeight:65,   sets:4, reps:"5~6",   defaultReps:5,  rir:"2~3" },
     { name:"바벨 벤트오버 로우",   defaultWeight:65,   sets:4, reps:"6~8",   defaultReps:6,  rir:"1~2" },
     { name:"바벨 오버헤드 프레스", defaultWeight:45,   sets:3, reps:"6~8",   defaultReps:6,  rir:"1~2" },
-    { name:"랫 풀다운",            defaultWeight:50,   sets:3, reps:"8~10",  defaultReps:8,  rir:"1~2" },
+    { name:"랫 풀다운",            defaultWeight:50,   sets:3, reps:"10~12",  defaultReps:10,  rir:"1~2" },
     { name:"케이블 플라이",        defaultWeight:10,   sets:3, reps:"12~15", defaultReps:12, rir:"1"   },
-    { name:"트라이셉스 푸시다운",  defaultWeight:20,   sets:3, reps:"10~12", defaultReps:10, rir:"1~2" },
-    { name:"바벨 컬",              defaultWeight:20,   sets:3, reps:"8~10",  defaultReps:8,  rir:"1~2" },
+    { name:"트라이셉스 푸시다운",  defaultWeight:20,   sets:3, reps:"12~15", defaultReps:12, rir:"1~2" },
+    { name:"바벨 컬",              defaultWeight:20,   sets:3, reps:"10~12",  defaultReps:10,  rir:"1~2" },
   ],
   "Day 2": [ // Lower A — 쿼드
     { name:"바벨 스쿼트",           defaultWeight:80,   sets:4, reps:"6~8",   defaultReps:6,  rir:"1~2" },
@@ -101,7 +102,7 @@ const ROUTINE = {
     { name:"랫 풀다운",            defaultWeight:50,   sets:3, reps:"10~12", defaultReps:10, rir:"1~2" },
     { name:"페이스 풀",            defaultWeight:20,   sets:4, reps:"15~20", defaultReps:15, rir:"1~2" },
     { name:"사이드 레터럴 레이즈", defaultWeight:10,   sets:5, reps:"15~25", defaultReps:15, rir:"1"   },
-    { name:"오버헤드 트라이셉스 익스텐션", defaultWeight:20, sets:3, reps:"10~12", defaultReps:10, rir:"1~2" },
+    { name:"오버헤드 트라이셉스 익스텐션", defaultWeight:20, sets:3, reps:"12~15", defaultReps:12, rir:"1~2" },
     { name:"인클라인 덤벨 컬",    defaultWeight:10,   sets:3, reps:"12~15", defaultReps:12, rir:"1~2" },
   ],
   "Day 4": [ // Lower B — 후면
@@ -117,7 +118,6 @@ const ROUTINE = {
 // ─── 상수 ────────────────────────────────────────────────────────
 const SET_STATUS = [
   { value:"success", label:"✅", text:"성공", color:"#22c55e", rgb:"34,197,94"   },
-  { value:"close",   label:"⚠️", text:"간신", color:"#f59e0b", rgb:"245,158,11" },
   { value:"fail",    label:"❌", text:"실패", color:"#ef4444", rgb:"239,68,68"   },
 ];
 const WEEKDAYS = ["일","월","화","수","목","금","토"];
@@ -370,7 +370,10 @@ export default function WorkoutTracker() {
       const next=[...existing];
       const targetReps=prev[exName]?.targetReps??getSuggested(ROUTINE[activeDayRef.current].find(e=>e.name===exName)).reps;
       if(next[idx]?.status===val){next[idx]=null;}
-      else{next[idx]={status:val,reps:next[idx]?.reps??targetReps};}
+      else{
+        const defaultReps = val==="success" ? targetReps : Math.max(1, targetReps-1);
+        next[idx]={status:val, reps: next[idx]?.status==="fail" ? next[idx].reps : defaultReps};
+      }
       const filled=next.filter(Boolean).length;
       if(next[idx]&&filled<totalSets)startTimer(exName);
       if(next[idx]&&filled===totalSets){
@@ -423,7 +426,7 @@ export default function WorkoutTracker() {
       const sets=log.sets||[];
       const {nextWeight,nextReps,bump,progressNote}=calcDoubleProgression(ex.name,weight,sets,ex.reps,last);
       const filled=sets.filter(Boolean);
-      const overall=filled.length===0?"close":filled.filter(s=>s?.status==="fail").length>=2?"fail":filled.filter(s=>s?.status==="fail").length===1?"close":"success";
+      const overall=filled.length===0?"fail":filled.filter(s=>s?.status==="fail").length>=1?"fail":"success";
       return{name:ex.name,weight,sets,overall,date,nextWeight,nextReps,bump,progressNote,reps:ex.reps};
     });
     const isPartial=completedCount<exercises.length;
@@ -550,7 +553,7 @@ export default function WorkoutTracker() {
               const {nextWeight,nextReps,bump,progressNote}=calcDoubleProgression(ex.name,parseFloat(weightVal)||suggested.weight,setStatuses,ex.reps,last);
               const done=isExDone(ex.name,ex.sets);
               const filled=setStatuses.filter(Boolean);
-              const overall=filled.length===0?"close":filled.filter(s=>s?.status==="fail").length>=2?"fail":filled.filter(s=>s?.status==="fail").length===1?"close":"success";
+              const overall=filled.length===0?"fail":filled.filter(s=>s?.status==="fail").length>=1?"fail":"success";
               const si=done?getSI(overall):null;
               const step=getWeightStep(ex.name);
               const isCollapsed=collapsed[ex.name]&&done;
@@ -616,19 +619,32 @@ export default function WorkoutTracker() {
                           const cur=setStatuses[i]||null;
                           const ci=cur?getSI(cur.status):null;
                           const setReps=cur?.reps??targetReps;
+                          const isFail=cur?.status==="fail";
+                          const isSuccess=cur?.status==="success";
                           return (
                             <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",borderRadius:12,background:cur?`rgba(${ci.rgb},0.07)`:"rgba(255,255,255,0.025)",border:`1px solid ${cur?ci.color+"35":"rgba(255,255,255,0.05)"}`,transition:"all 0.2s"}}>
                               <div style={{width:28,height:28,borderRadius:"50%",flexShrink:0,background:cur?ci.color:"rgba(255,255,255,0.07)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,color:cur?"#fff":"#444"}}>
                                 {i+1}
                               </div>
-                              <div style={{display:"flex",alignItems:"center",gap:5,flex:1}}>
-                                <button onClick={()=>cur&&updateSetReps(ex.name,i,Math.max(1,setReps-1),ex.sets)}
-                                  style={{width:24,height:24,borderRadius:6,border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.03)",color:"#555",fontSize:12,cursor:"pointer",opacity:cur?1:0.3}}>−</button>
-                                <span style={{fontSize:13,fontWeight:700,color:cur?ci.color:"#555",minWidth:24,textAlign:"center"}}>{setReps}</span>
-                                <button onClick={()=>cur&&updateSetReps(ex.name,i,setReps+1,ex.sets)}
-                                  style={{width:24,height:24,borderRadius:6,border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.03)",color:"#555",fontSize:12,cursor:"pointer",opacity:cur?1:0.3}}>+</button>
-                                <span style={{fontSize:11,color:"#444"}}>회</span>
-                              </div>
+                              {/* 실패시 횟수 조절 */}
+                              {isFail?(
+                                <div style={{display:"flex",alignItems:"center",gap:5,flex:1}}>
+                                  <button onClick={()=>updateSetReps(ex.name,i,Math.max(1,setReps-1),ex.sets)}
+                                    style={{width:28,height:28,borderRadius:7,border:"1px solid rgba(239,68,68,0.25)",background:"rgba(239,68,68,0.08)",color:"#f87171",fontSize:14,cursor:"pointer",fontWeight:700}}>−</button>
+                                  <span style={{fontSize:14,fontWeight:800,color:"#f87171",minWidth:28,textAlign:"center"}}>{setReps}</span>
+                                  <button onClick={()=>updateSetReps(ex.name,i,Math.min(targetReps-1,setReps+1),ex.sets)}
+                                    style={{width:28,height:28,borderRadius:7,border:"1px solid rgba(239,68,68,0.25)",background:"rgba(239,68,68,0.08)",color:"#f87171",fontSize:14,cursor:"pointer",fontWeight:700}}>+</button>
+                                  <span style={{fontSize:11,color:"#666"}}>회 (목표 {targetReps})</span>
+                                </div>
+                              ):(
+                                <div style={{flex:1,display:"flex",alignItems:"center"}}>
+                                  {isSuccess?(
+                                    <span style={{fontSize:13,fontWeight:700,color:"#22c55e"}}>{targetReps}회 ✓</span>
+                                  ):(
+                                    <span style={{fontSize:13,color:"#444"}}>{targetReps}회 목표</span>
+                                  )}
+                                </div>
+                              )}
                               <div style={{display:"flex",gap:5}}>
                                 {SET_STATUS.map(s=>(
                                   <button key={s.value} onClick={()=>updateSetStatus(ex.name,i,s.value,ex.sets)}
